@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pong Duel – 2 Player (Single File)</title>
+<style>
+:root{--bg:#0f1220;--panel:#171b2f;--accent:#5ee7ff;--accent-2:#ff6b6b;--text:#e8eef8;--muted:#a9b1c6;--line:#2b3150}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#1c2140 0%,var(--bg) 60%);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji"}
+#app{max-width:1100px;margin:24px auto;padding:0 16px 40px}
+.topbar{display:flex;align-items:center;gap:16px;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px}
+h1{margin:0;font-size:clamp(22px,3vw,28px);letter-spacing:.5px}
+.controls{display:flex;align-items:center;gap:10px}
+.btn{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:8px 14px;border-radius:8px;cursor:pointer;transition:transform .05s ease,background .2s,border-color .2s}
+.btn:hover{background:#212744;border-color:#3a4270}.btn:active{transform:translateY(1px) scale(.99)}.btn.primary{background:linear-gradient(180deg,#2e385f,#242a4a);border-color:#48508a}
+.setting{display:inline-flex;align-items:center;gap:8px;color:var(--muted);background:var(--panel);border:1px solid var(--line);padding:6px 10px;border-radius:8px}
+.setting input{width:64px;padding:4px 6px;color:var(--text);background:#11152a;border:1px solid #2c355f;border-radius:6px}
+.hud{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:14px 0}
+.score{background:linear-gradient(180deg,#1a1f39,#121730);border:1px solid #2b3150;border-radius:12px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+.score span{color:var(--muted)}.score strong{font-size:clamp(24px,6vw,36px);color:var(--accent)}
+.stage{background:#0b0f24;border:1px solid var(--line);border-radius:14px;overflow:hidden;position:relative}
+canvas{width:100%;height:auto;display:block;aspect-ratio:16/9;background:radial-gradient(800px 400px at 50% -10%,#101632 0%,#0b0f24 40%),#0b0f24}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;color:#e9eefc;background:linear-gradient(180deg,rgba(15,18,32,0.0),rgba(15,18,32,0.38));font-size:clamp(18px,4vw,28px);text-align:center;user-select:none;pointer-events:none}
+.overlay.hidden{display:none}
+.help{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;color:var(--muted)}
+.help h3{color:var(--text);margin:0 0 8px;font-size:16px}.help ul{margin:0;padding-left:18px}
+.touchControls{position:fixed;inset:auto 0 10px 0;display:none;justify-content:space-between;padding:0 10px;pointer-events:none}
+.touchColumn{width:40%;display:flex;gap:8px;justify-content:space-between}
+.touchBtn{pointer-events:auto;width:48%;padding:14px 0;border-radius:12px;font-size:22px;color:#dfe8ff;background:rgba(36,46,90,0.65);border:1px solid rgba(80,100,180,0.5);backdrop-filter:blur(4px)}
+.touchBtn:active{transform:scale(.98)}
+@media (max-width:820px){.touchControls{display:flex}.help{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main id="app">
+  <header class="topbar">
+    <h1>Pong Duel</h1>
+    <div class="controls">
+      <button id="startBtn" class="btn primary">Start / Reset</button>
+      <button id="pauseBtn" class="btn">Pause</button>
+      <label class="setting">Play to
+        <input id="winScoreInput" type="number" min="1" max="50" value="7" />
+      </label>
+    </div>
+  </header>
+  <section class="hud">
+    <div class="score"><span>Player 1</span><strong id="scoreL">0</strong></div>
+    <div class="score"><span>Player 2</span><strong id="scoreR">0</strong></div>
+  </section>
+  <section class="stage">
+    <canvas id="gameCanvas" width="960" height="540" aria-label="Game canvas"></canvas>
+    <div id="overlay" class="overlay hidden"></div>
+  </section>
+  <section class="help">
+    <div>
+      <h3>Controls</h3>
+      <ul>
+        <li><strong>Player 1:</strong> W / S</li>
+        <li><strong>Player 2:</strong> ↑ / ↓</li>
+        <li><strong>Pause/Resume:</strong> Space or button</li>
+        <li><strong>Start/Reset:</strong> Button</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Tips</h3>
+      <ul>
+        <li>Ball speeds up after paddle hits.</li>
+        <li>Change "Play to" for shorter/longer matches.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+<div class="touchControls" aria-hidden="true">
+  <div class="touchColumn left">
+    <button id="leftUp" class="touchBtn">▲</button>
+    <button id="leftDown" class="touchBtn">▼</button>
+  </div>
+  <div class="touchColumn right">
+    <button id="rightUp" class="touchBtn">▲</button>
+    <button id="rightDown" class="touchBtn">▼</button>
+  </div>
+</div>
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const scoreL = document.getElementById('scoreL');
+  const scoreR = document.getElementById('scoreR');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const winScoreInput = document.getElementById('winScoreInput');
+
+  // Touch buttons
+  const leftUpBtn = document.getElementById('leftUp');
+  const leftDownBtn = document.getElementById('leftDown');
+  const rightUpBtn = document.getElementById('rightUp');
+  const rightDownBtn = document.getElementById('rightDown');
+
+  // ----- Audio (WebAudio beeps) -----
+  let audioCtx = null;
+  function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  function beep({ freq = 440, duration = 0.05, type = 'sine', volume = 0.05 } = {}) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.value = volume;
+    osc.connect(gain).connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+    osc.start(now);
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    osc.stop(now + duration + 0.01);
+  }
+  const sfx = {
+    hit:   () => beep({ freq: 660, duration: 0.04, type: 'square',  volume: 0.04 }),
+    wall:  () => beep({ freq: 360, duration: 0.03, type: 'triangle', volume: 0.03 }),
+    score: () => beep({ freq: 220, duration: 0.10, type: 'sawtooth', volume: 0.05 }),
+    start: () => beep({ freq: 520, duration: 0.06, type: 'square',  volume: 0.045 }),
+    win:   () => { beep({ freq: 780, duration: 0.10, type: 'sine', volume: 0.05 }); setTimeout(() => beep({ freq: 1040, duration: 0.10, type: 'sine', volume: 0.05 }), 110); }
+  };
+
+  // ----- Game state -----
+  const state = {
+    running: false,
+    paused: false,
+    winner: 0,
+    toWin: Math.min(Math.max(parseInt(localStorage.getItem('pong_toWin')) || 7, 1), 50),
+    scoreL: 0,
+    scoreR: 0,
+    W: 960, H: 540,
+    paddle: { w: 14, h: 100, speed: 520, pad: 24 },
+    ball: { x: 0, y: 0, r: 10, vx: 0, vy: 0, speed: 420, maxSpeed: 980, accelOnHit: 1.06 },
+    input: { w:false, s:false, up:false, down:false, touch:{ LUp:false, LDown:false, RUp:false, RDown:false } },
+    leftY: 0,
+    rightY: 0,
+    lastTime: 0
+  };
+  winScoreInput.value = state.toWin;
+
+  // ----- Canvas resize -----
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // Helpers
+  const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+
+  function launchBall(towardsRight = true) {
+    state.ball.x = state.W / 2;
+    state.ball.y = state.H / 2;
+    const angle = (Math.random() * 0.6 - 0.3) + (towardsRight ? 0 : Math.PI);
+    const speed = state.ball.speed;
+    state.ball.vx = Math.cos(angle) * speed;
+    state.ball.vy = Math.sin(angle) * speed;
+  }
+
+  function resetMatch() {
+    state.scoreL = 0; state.scoreR = 0; state.winner = 0;
+    state.leftY = state.H/2 - state.paddle.h/2;
+    state.rightY = state.H/2 - state.paddle.h/2;
+    state.paused = false; state.running = true;
+    launchBall(Math.random() < 0.5);
+    sfx.start(); updateHud(); hideOverlay();
+  }
+
+  function pauseToggle() {
+    if (!state.running || state.winner) return;
+    state.paused = !state.paused;
+    if (state.paused) showOverlay('Paused'); else hideOverlay();
+  }
+
+  function endRound(scoredRight) {
+    if (scoredRight) state.scoreR++; else state.scoreL++;
+    sfx.score(); updateHud();
+    if (state.scoreL >= state.toWin || state.scoreR >= state.toWin) {
+      state.winner = state.scoreL > state.scoreR ? 1 : 2;
+      state.running = false; sfx.win();
+      showOverlay(`Player ${state.winner} wins!\nPress Start/Reset to play again`);
+      return;
+    }
+    const towardsRight = !scoredRight;
+    showOverlay(scoredRight ? 'Point: Player 2' : 'Point: Player 1');
+    setTimeout(() => { hideOverlay(); launchBall(towardsRight); }, 700);
+  }
+
+  function updateHud(){ scoreL.textContent = state.scoreL; scoreR.textContent = state.scoreR; }
+  function showOverlay(text){ overlay.textContent = text; overlay.classList.remove('hidden'); }
+  function hideOverlay(){ overlay.classList.add('hidden'); overlay.textContent=''; }
+
+  // ----- Input -----
+  window.addEventListener('keydown', (e) => {
+    if (['Space','ArrowUp','ArrowDown','KeyW','KeyS'].includes(e.code)) e.preventDefault();
+    switch (e.code) {
+      case 'KeyW': state.input.w = true; break;
+      case 'KeyS': state.input.s = true; break;
+      case 'ArrowUp': state.input.up = true; break;
+      case 'ArrowDown': state.input.down = true; break;
+      case 'Space': initAudio(); pauseToggle(); break;
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    switch (e.code) {
+      case 'KeyW': state.input.w = false; break;
+      case 'KeyS': state.input.s = false; break;
+      case 'ArrowUp': state.input.up = false; break;
+      case 'ArrowDown': state.input.down = false; break;
+    }
+  });
+
+  function touchHold(btn, prop){
+    const set = (v) => { state.input.touch[prop] = v; };
+    btn.addEventListener('pointerdown', (e) => { initAudio(); e.preventDefault(); btn.setPointerCapture?.(e.pointerId); set(true); });
+    ['pointerup','pointercancel','pointerleave'].forEach(ev => btn.addEventListener(ev, () => set(false)));
+  }
+  touchHold(leftUpBtn,'LUp'); touchHold(leftDownBtn,'LDown');
+  touchHold(rightUpBtn,'RUp'); touchHold(rightDownBtn,'RDown');
+
+  // Buttons
+  startBtn.addEventListener('click', () => { initAudio(); resetMatch(); });
+  pauseBtn.addEventListener('click', () => { initAudio(); pauseToggle(); });
+  winScoreInput.addEventListener('change', () => {
+    let v = parseInt(winScoreInput.value) || 7; v = Math.min(Math.max(v,1),50);
+    winScoreInput.value = v; state.toWin = v; localStorage.setItem('pong_toWin', String(v));
+  });
+
+  // ----- Game loop -----
+  function step(t){
+    requestAnimationFrame(step);
+    if (!state.lastTime) state.lastTime = t;
+    const dt = Math.min((t - state.lastTime) / 1000, 0.033);
+    state.lastTime = t;
+    if (state.running && !state.paused && !state.winner) { update(dt); render(); }
+    else { render(); }
+  }
+  requestAnimationFrame(step);
+
+  function update(dt){
+    const H = state.H;
+    const { w:pw, h:ph, speed:ps, pad } = state.paddle;
+    const b = state.ball;
+
+    const lUp = state.input.w || state.input.touch.LUp;
+    const lDown = state.input.s || state.input.touch.LDown;
+    const rUp = state.input.up || state.input.touch.RUp;
+    const rDown = state.input.down || state.input.touch.RDown;
+
+    if (lUp && !lDown) state.leftY -= ps * dt;
+    if (lDown && !lUp) state.leftY += ps * dt;
+    if (rUp && !rDown) state.rightY -= ps * dt;
+    if (rDown && !rUp) state.rightY += ps * dt;
+
+    state.leftY = clamp(state.leftY, 0, H - ph);
+    state.rightY = clamp(state.rightY, 0, H - ph);
+
+    b.x += b.vx * dt; b.y += b.vy * dt;
+
+    if (b.y - b.r <= 0) { b.y = b.r; b.vy *= -1; sfx.wall(); }
+    else if (b.y + b.r >= H) { b.y = H - b.r; b.vy *= -1; sfx.wall(); }
+
+    const lpX = pad, lpY = state.leftY;
+    if (b.x - b.r <= lpX + pw && b.x - b.r >= lpX && b.y >= lpY && b.y <= lpY + ph && b.vx < 0) {
+      b.x = lpX + pw + b.r;
+      const hit = ((b.y - (lpY + ph/2)) / (ph/2));
+      const speed = Math.min(Math.hypot(b.vx,b.vy) * state.ball.accelOnHit, state.ball.maxSpeed);
+      const angle = (hit * 0.5) * Math.PI / 2;
+      b.vx = Math.cos(angle) * speed;
+      b.vy = Math.sin(angle) * speed;
+      sfx.hit();
+    }
+
+    const rpX = state.W - pad - pw, rpY = state.rightY;
+    if (b.x + b.r >= rpX && b.x + b.r <= rpX + pw && b.y >= rpY && b.y <= rpY + ph && b.vx > 0) {
+      b.x = rpX - b.r;
+      const hit = ((b.y - (rpY + ph/2)) / (ph/2));
+      const speed = Math.min(Math.hypot(b.vx,b.vy) * state.ball.accelOnHit, state.ball.maxSpeed);
+      const angle = (hit * 0.5) * Math.PI / 2;
+      b.vx = -Math.cos(angle) * speed;
+      b.vy = Math.sin(angle) * speed;
+      sfx.hit();
+    }
+
+    if (b.x + b.r < 0) endRound(true);
+    else if (b.x - b.r > state.W) endRound(false);
+  }
+
+  function render() {
+    const Wcss = canvas.getBoundingClientRect().width;
+    const Hcss = canvas.getBoundingClientRect().height;
+    const W = state.W, H = state.H;
+
+    ctx.clearRect(0, 0, Wcss, Hcss);
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 4; ctx.setLineDash([10,18]);
+    ctx.beginPath(); ctx.moveTo(Wcss/2, 10); ctx.lineTo(Wcss/2, Hcss-10); ctx.stroke();
+    ctx.restore();
+
+    const sx = Wcss / W, sy = Hcss / H;
+
+    const { w:pw, h:ph, pad } = state.paddle;
+    ctx.fillStyle = '#e2edff';
+    ctx.fillRect((pad)*sx, state.leftY*sy, (pw)*sx, (ph)*sy);
+    ctx.fillRect((W - pad - pw)*sx, state.rightY*sy, (pw)*sx, (ph)*sy);
+
+    const b = state.ball;
+    ctx.beginPath(); ctx.arc(b.x*sx, b.y*sy, b.r*((sx+sy)/2), 0, Math.PI*2); ctx.fill();
+
+    if (!state.running && !state.winner) { showOverlay('Press Start to begin'); }
+  }
+
+  // Init positions
+  state.leftY = state.H/2 - state.paddle.h/2;
+  state.rightY = state.H/2 - state.paddle.h/2;
+  state.ball = { ...state.ball, x: state.W/2, y: state.H/2, vx: 0, vy: 0 };
+  render();
+})();
+</script>
+</body>
+</html>
